@@ -49,7 +49,7 @@ export default function HistoryPage() {
     <div className="page">
       <Header user={user} />
       <section>
-        <h2>履歴の管理</h2>
+        <h2>コメントの管理</h2>
         <AddHistoryForm onAdd={add} />
         <HistoryList items={items} onUpdate={update} onDelete={remove} />
       </section>
