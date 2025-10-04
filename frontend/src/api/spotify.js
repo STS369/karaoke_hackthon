@@ -69,4 +69,14 @@ export function buildSingabilityMap(featuresList) {
   }
   return map;
 }
+
+// 最近のおすすめ履歴（サーバのセッションに保持）
+export async function fetchRecommendationHistory() {
+  const data = await apiFetch(`/recommendations/recent`);
+  return data.entries || [];
+}
+
+export async function clearRecommendationHistory() {
+  await apiFetch(`/recommendations/recent`, { method: "DELETE" });
+}
 //
