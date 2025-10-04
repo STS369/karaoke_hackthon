@@ -1,4 +1,4 @@
-// 履歴一覧：点数とコメントを編集可能にする
+// コメント一覧：点数とコメントを編集可能にする
 import React, { useState } from "react";
 
 function clampScore(v) {
@@ -85,7 +85,7 @@ function Row({ item, onUpdate, onDelete }) {
 }
 
 export default function HistoryList({ items, onUpdate, onDelete }) {
-  if (!items?.length) return <div>まだ履歴がありません。</div>;
+  if (!items?.length) return <div>まだコメントがありません。</div>;
   return (
     <div className="history-list">
       {items.map(it => (
