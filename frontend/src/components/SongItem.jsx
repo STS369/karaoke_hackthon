@@ -1,7 +1,7 @@
 // 役割: 最近聴いた曲1件の行表示。曲名/アーティスト/カバー画像 + コメントに追加ボタン
 import React from "react";
 
-export default function SongItem({ track, onQuickAdd }) {
+export default function SongItem({ track, onQuickAdd, onAddSelected, onRemove }) {
   const artists = (track?.artists || []).map(a => a.name).join(", ");
   return (
     <div className="song-item">
@@ -19,14 +19,32 @@ export default function SongItem({ track, onQuickAdd }) {
         <div className="title">{track?.name}</div>
         <div className="artist">{artists}</div>
       </div>
-      {onQuickAdd && (
-        <button
-          className="btn"
-          onClick={() => onQuickAdd({ title: track?.name, artist: artists })}
-        >
-          コメントに追加
-        </button>
-      )}
+      <div className="actions" style={{ display: 'flex', gap: 8 }}>
+        {onQuickAdd && (
+          <button
+            className="btn"
+            onClick={() => onQuickAdd({ title: track?.name, artist: artists })}
+          >
+            コメントに追加
+          </button>
+        )}
+        {onAddSelected && (
+          <button
+            className="btn primary"
+            onClick={() => onAddSelected(track)}
+          >
+            選択に追加
+          </button>
+        )}
+        {onRemove && (
+          <button
+            className="btn danger"
+            onClick={() => onRemove(track?.id)}
+          >
+            取り除く
+          </button>
+        )}
+      </div>
     </div>
   );
 }
