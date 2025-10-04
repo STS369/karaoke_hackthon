@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import MainPage from "./pages/MainPage";
 import HistoryPage from "./pages/HistoryPage";
+import AddPage from "./pages/AddPage";
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<MainPage />} />
       <Route path="/history" element={<HistoryPage />} />
+      <Route path="/add" element={<AddPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
