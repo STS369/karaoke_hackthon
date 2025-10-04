@@ -1,58 +1,53 @@
-// Simple localStorage-backed selected tracks store
-import { useEffect, useState, useCallback } from "react";
-import { toast } from "react-toastify"; // ★ 1. toastをインポート
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import toast from "react-hot-toast"; // 1. 通知ライブラリをインポート
 
-const LS_KEY = "selected_tracks";
+// zustand を使って状態管理ストアを作成します
+const useSelectedStore = create(
+  // persist を使うと、選択した曲がリロードしても消えなくなります
+  persist(
+    (set, get) => ({
+      // state: 選択された曲のリスト
+      selected: [],
 
-function load() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
-}
+      // action: 曲を選択リストに追加する関数
+      addSelected: (track) => {
+        // すでに同じ曲IDがリストに存在するかチェックします
+        if (get().selected.some((t) => t.id === track.id)) {
+          // 存在する場合、エラー通知を出して処理を中断します
+          toast.error(`「${track.name}」はすでに追加されています`);
+          return;
+        }
 
-function save(list) {
-  localStorage.setItem(LS_KEY, JSON.stringify(list));
-}
+        // 存在しない場合、リストに曲を追加します
+        set((state) => ({ selected: [...state.selected, track] }));
 
-export default function useSelectedStore() {
-  const [selected, setSelected] = useState(load);
+        // 成功したことを通知します
+        toast.success(`「${track.name}」を選択に追加しました！`);
+      },
 
-  useEffect(() => { save(selected); }, [selected]);
-
-  const addSelected = useCallback((track) => {
-    if (!track || !track.id) return;
-
-    // ★ 2. 状態を更新する前に、すでに追加済みかチェック
-    const isAlreadyAdded = selected.some(item => item.id === track.id);
-
-    if (isAlreadyAdded) {
-      // ★ 3. すでに追加されている場合は、警告メッセージを表示
-      toast.warn(`「${track.name}」はすでに追加されています`);
-      return; // ここで処理を終了
+      // action: 曲を選択リストから削除する関数
+      removeSelected: (trackId) => {
+        set((state) => ({
+          selected: state.selected.filter((t) => t.id !== trackId),
+        }));
+        // 削除したことを通知します
+        toast.success("選択から削除しました");
+      },
+      
+      // action: 選択リストをすべて空にする関数
+      clearSelected: () => {
+        if (get().selected.length > 0) {
+          set({ selected: [] });
+          toast.success("すべての選択をクリアしました");
+        }
+      },
+    }),
+    {
+      // localStorageに保存する際のキー名
+      name: "karaoke-selected-storage",
     }
+  )
+);
 
-    setSelected(prev => {
-      // この重複除去ロジックは元のコードのまま活かします
-      const seen = new Set();
-      const out = [];
-      const next = [track, ...prev];
-      for (const t of next) {
-        const id = t && t.id;
-        if (id && !seen.has(id)) { seen.add(id); out.push(t); }
-      }
-      return out;
-    });
-
-    // ★ 4. 成功メッセージを表示
-    toast.success(`「${track.name}」を選択に追加しました！`);
-
-  }, [selected]); // ★ 5. selectedを依存配列に追加
-
-  const removeSelected = useCallback((id) => {
-    setSelected(prev => prev.filter(t => t && t.id !== id));
-    // お好みで削除時にも通知を出すことができます
-    // toast.info("選択から削除しました");
-  }, []);
-
-  const clearSelected = useCallback(() => setSelected([]), []);
-
-  return { selected, addSelected, removeSelected, clearSelected };
-}
+export default useSelectedStore;

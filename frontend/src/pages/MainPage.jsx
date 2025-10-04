@@ -28,7 +28,7 @@ export default function MainPage() {
     <div className="page">
       <Header user={user} />
       <section>
-        <h2>選択された曲</h2>
+        <h2>カラオケリスト</h2>
         <SelectedList tracks={selected} onRemove={removeSelected} />
       </section>
     </div>

@@ -33,7 +33,7 @@ export default function SongItem({ track, onQuickAdd, onAddSelected, onRemove })
             className="btn primary"
             onClick={() => onAddSelected(track)}
           >
-            選択に追加
+            リストに追加
           </button>
         )}
         {onRemove && (

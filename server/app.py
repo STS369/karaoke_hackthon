@@ -34,7 +34,7 @@ SCOPE = os.environ.get(
 
 SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "change-me-please")
 # Primary recommendation source: Sample Playlist (override via env if needed)
-RECOMMENDATION_PLAYLIST_ID = os.environ.get("RECOMMENDATION_PLAYLIST_ID", "3cEYpjA9oz9GiPac4AsH4n")
+RECOMMENDATION_PLAYLIST_ID = os.environ.get("RECOMMENDATION_PLAYLIST_ID", "4FhlAvZc0SJXqy1WVcHo7q")
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY

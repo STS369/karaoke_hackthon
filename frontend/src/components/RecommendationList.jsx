@@ -11,7 +11,7 @@ export default function RecommendationList({ tracks, featuresMap, onAddSelected 
           <SongCard track={t} feature={featuresMap?.get(t.id)} popularity={t.popularity} />
           {onAddSelected && (
             <div style={{ marginTop: 8 }}>
-              <button className="btn primary" onClick={() => onAddSelected(t)}>選択に追加</button>
+              <button className="btn primary" onClick={() => onAddSelected(t)}>リストに追加</button>
             </div>
           )}
         </div>
