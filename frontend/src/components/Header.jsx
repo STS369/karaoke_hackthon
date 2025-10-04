@@ -14,8 +14,8 @@ export default function Header({ user }) {
     <header className="app-header">
       <Link to="/" className="brand">Karaoke Hub</Link>
       <nav className="nav">
-        {/* <Link to="/">おすすめ</Link> */}
-        <Link to="/history">コメント</Link>
+        <Link to="/add">追加</Link>
+        <Link to="/history">履歴</Link>
       </nav>
       <div className="userbox">
         {user ? <span className="username">{user.display_name || user.id}</span> : <span>Guest</span>}
@@ -24,3 +24,4 @@ export default function Header({ user }) {
     </header>
   );
 }
+
