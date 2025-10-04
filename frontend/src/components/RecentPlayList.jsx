@@ -1,4 +1,4 @@
-// 役割: 最近聴いた曲のリスト表示（履歴へクイック追加ボタン付き）
+// 役割: 最近聴いた曲のリスト表示（コメントへクイック追加ボタン付き）
 import React from "react";
 import SongItem from "./SongItem";
 
