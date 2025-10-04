@@ -1,4 +1,4 @@
-// 役割: 最近聴いた曲1件の行表示。曲名/アーティスト/カバー画像 + 履歴に追加ボタン
+// 役割: 最近聴いた曲1件の行表示。曲名/アーティスト/カバー画像 + コメントに追加ボタン
 import React from "react";
 
 export default function SongItem({ track, onQuickAdd }) {
@@ -24,7 +24,7 @@ export default function SongItem({ track, onQuickAdd }) {
           className="btn"
           onClick={() => onQuickAdd({ title: track?.name, artist: artists })}
         >
-          履歴に追加
+          コメントに追加
         </button>
       )}
     </div>
