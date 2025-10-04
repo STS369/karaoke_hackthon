@@ -1,6 +1,7 @@
 # server/app.py
 import os
 import time
+import random
 
 from flask import Flask, jsonify, redirect, request, session, make_response
 from flask_cors import CORS
@@ -31,6 +32,8 @@ SCOPE = os.environ.get(
 )
 
 SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "change-me-please")
+# Primary recommendation source: Sample Playlist (override via env if needed)
+RECOMMENDATION_PLAYLIST_ID = os.environ.get("RECOMMENDATION_PLAYLIST_ID", "3cEYpjA9oz9GiPac4AsH4n")
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -92,6 +95,39 @@ def _require_auth():
     if not _ensure_token():
         return jsonify({"error": "unauthorized"}), 401
     return None
+
+# 最近のおすすめ履歴（セッション保持）
+RECENT_RECS_MAX = 5
+
+def _save_recent_recs(track_ids):
+    try:
+        ids_in = [tid for tid in (track_ids or []) if isinstance(tid, str) and tid]
+    except Exception:
+        ids_in = []
+    # de-duplicate while preserving order
+    seen = set()
+    ids = []
+    for tid in ids_in:
+        if tid not in seen:
+            seen.add(tid)
+            ids.append(tid)
+    if not ids:
+        return
+    now_ts = int(time.time())
+    lst = session.get("recent_recs") or []
+    # if identical to latest snapshot, just refresh timestamp and do not append
+    if lst and (lst[0].get("track_ids") or []) == ids:
+        lst[0]["ts"] = now_ts
+        session["recent_recs"] = lst
+        return
+    entry = {"ts": now_ts, "track_ids": ids}
+    lst = [entry] + lst
+    if len(lst) > RECENT_RECS_MAX:
+        lst = lst[:RECENT_RECS_MAX]
+    session["recent_recs"] = lst
+
+def _get_recent_recs():
+    return session.get("recent_recs") or []
 
 # ----------------------------------------------------------------------------
 # Routes
@@ -220,44 +256,247 @@ def recommendations():
     if sp is None:
         return jsonify({"error": "unauthorized"}), 401
     try:
-        limit = int(request.args.get("limit", 20))
+        # Primary: use RECOMMENDATION_PLAYLIST_ID; Fallbacks: search + toplists category
+        n = 10
+
+        def extract_tracks(items):
+            return [
+                it.get("track") for it in (items or [])
+                if it.get("track") and it["track"].get("id") and not it["track"].get("is_local")
+            ]
+
+        def try_fetch_playlist(pid, market=None):
+            try:
+                pl = sp.playlist(pid, market=market)
+                items_local = (pl.get("tracks") or {}).get("items", [])
+                return extract_tracks(items_local)
+            except Exception:
+                return []
+
+        def is_spotify_owner(pl):
+            owner = (pl or {}).get("owner") or {}
+            name = (owner.get("display_name") or owner.get("id") or "").lower()
+            return "spotify" in name
+
+        # Determine user market (best effort)
+        try:
+            user = sp.current_user()
+            market = (user or {}).get("country") or None
+        except Exception:
+            market = None
+
+        tracks = []
+        # 1) Fixed playlist id first (no market, then with market)
+        tracks = try_fetch_playlist(RECOMMENDATION_PLAYLIST_ID, market=None)
+        if not tracks and market:
+            tracks = try_fetch_playlist(RECOMMENDATION_PLAYLIST_ID, market=market)
+
+        # 2) Search by common names if still empty
+        if not tracks:
+            queries = [
+                # New Music Friday variants
+                "New Music Friday",
+                "New Music Friday Japan",
+                "New Music Friday – Japan",
+                "New Music Friday — Japan",
+                "ニュー・ミュージック・フライデー",
+                # Fallbacks that often exist globally
+                "Today's Top Hits",
+                "Today’s Top Hits",
+                "Top Hits",
+                "今日のトップヒッツ",
+            ]
+            candidates = []
+            for q in queries:
+                try:
+                    res = sp.search(q=q, type="playlist", limit=10) or {}
+                    pls = (res.get("playlists") or {}).get("items", [])
+                    # prioritize Spotify-owned first, then others
+                    spotify_owned = [p for p in pls if is_spotify_owner(p)]
+                    others = [p for p in pls if not is_spotify_owner(p)]
+                    candidates.extend(spotify_owned + others)
+                except Exception:
+                    continue
+            # Try each candidate until tracks found
+            for p in candidates:
+                pid = p.get("id")
+                if not pid:
+                    continue
+                tracks = try_fetch_playlist(pid, market=market)
+                if tracks:
+                    break
+
+        # 3) Fallback to toplists category for user's market
+        if not tracks and market:
+            try:
+                cat = sp.category_playlists("toplists", country=market, limit=20) or {}
+                pls = (cat.get("playlists") or {}).get("items", [])
+                # Prefer names that look like Top Hits, Spotify-owned
+                prefer = []
+                for p in pls:
+                    name = (p.get("name") or "").lower()
+                    score = 0
+                    if "top" in name and "hit" in name:
+                        score += 2
+                    if is_spotify_owner(p):
+                        score += 1
+                    prefer.append((score, p))
+                for _, p in sorted(prefer, key=lambda x: -x[0]):
+                    pid = p.get("id")
+                    if not pid:
+                        continue
+                    tracks = try_fetch_playlist(pid, market=market)
+                    if tracks:
+                        break
+            except Exception:
+                pass
+
+        # Limit to n tracks
+        if len(tracks) > n:
+            try:
+                tracks = random.sample(tracks, n)
+            except Exception:
+                tracks = tracks[:n]
+        else:
+            tracks = tracks[:n]
+
+        # Save snapshot (best-effort)
+        try:
+            track_ids = [t.get("id") for t in tracks if t and t.get("id")]
+            _save_recent_recs(track_ids)
+        except Exception:
+            pass
+
+        return jsonify({"tracks": tracks})
+    except Exception as e:
+        # Never 500 for UI: fail safe with empty list
+        return jsonify({"tracks": []})
+
+# -------- API: recent recommendations history --------
+@app.route(f"{API_PREFIX}/recommendations/recent")
+def recommendations_recent():
+    need = _require_auth()
+    if need: return need
+    entries = _get_recent_recs()
+    if not entries:
+        return jsonify({"entries": []})
+    sp = _spotify()
+    out = []
+    tracks_by_id = {}
+    try:
+        all_ids = []
+        for e in entries:
+            all_ids.extend([tid for tid in e.get("track_ids", []) if tid])
+        for i in range(0, len(all_ids), 50):
+            resp = sp.tracks(all_ids[i:i+50]) if sp else {"tracks": []}
+            for t in (resp.get("tracks") or []):
+                if t and t.get("id"):
+                    tracks_by_id[t["id"]] = t
+    except Exception:
+        tracks_by_id = {}
+    for e in entries:
+        tids = [tid for tid in e.get("track_ids", []) if tid]
+        ts = e.get("ts")
+        t_objs = [tracks_by_id.get(tid) for tid in tids if tracks_by_id.get(tid)]
+        out.append({"ts": ts, "track_ids": tids, "tracks": t_objs})
+    return jsonify({"entries": out})
+
+@app.route(f"{API_PREFIX}/recommendations/recent", methods=["DELETE"])
+def recommendations_recent_clear():
+    session.pop("recent_recs", None)
+    return jsonify({"ok": True})
+
+# -------- API: recommendation sources (playlist candidates) --------
+@app.route(f"{API_PREFIX}/recommendations/sources")
+def recommendation_sources():
+    need = _require_auth()
+    if need: return need
+    sp = _spotify()
+    if sp is None:
+        return jsonify({"entries": []})
+    try:
         try:
             user = sp.current_user()
             market = (user or {}).get("country") or "JP"
         except Exception:
             market = "JP"
 
-        rp = sp.current_user_recently_played(limit=10).get("items", [])
-        seed_tracks = [
-            it["track"]["id"] for it in rp
-            if it.get("track") and it["track"].get("id") and not it["track"].get("is_local")
-        ][:5] or None
+        seen = set()
+        out = []
 
-        rec = None
-        if seed_tracks:
+        def try_add_playlist_basic(pl):
+            pid = (pl or {}).get("id")
+            if not pid or pid in seen:
+                return
             try:
-                rec = sp.recommendations(seed_tracks=seed_tracks, limit=limit, market=market)
+                # Validate accessibility by fetching the playlist
+                pl_full = sp.playlist(pid)
+                tracks_total = (pl_full.get("tracks") or {}).get("total")
+                out.append({
+                    "id": pid,
+                    "name": pl.get("name"),
+                    "owner": ((pl.get("owner") or {}).get("display_name") or (pl.get("owner") or {}).get("id")),
+                    "tracks_total": tracks_total,
+                })
+                seen.add(pid)
             except Exception:
-                rec = None
+                # Skip inaccessible playlists
+                pass
 
-        if not rec:
+        # 1) Category 'toplists' for user's market
+        try:
+            cat = sp.category_playlists("toplists", country=market, limit=20) or {}
+            pls = (cat.get("playlists") or {}).get("items", [])
+            # Prefer Japan-related names first
+            preferred = [p for p in pls if isinstance(p.get("name"), str) and (
+                "Japan" in p["name"] or "日本" in p["name"] or "JP" in p["name"]
+            )]
+            for p in preferred + pls:
+                try_add_playlist_basic(p)
+        except Exception:
+            pass
+
+        # 2) Search common Japan editorial lists
+        queries = [
+            "Top 50 - Japan",
+            "Viral 50 - Japan",
+            "Hot Hits Japan",
+            "J-Pop Now",
+            "J-Rock Now",
+            "Tokyo Super Hits",
+            "New Music Friday Japan",
+        ]
+        for q in queries:
             try:
-                top = sp.current_user_top_artists(limit=5).get("items", [])
-                seed_artists = [a["id"] for a in top if a.get("id")][:5]
-                if seed_artists:
-                    rec = sp.recommendations(seed_artists=seed_artists, limit=limit, market=market)
+                res = sp.search(q=q, type="playlist", limit=5) or {}
+                playlists = (res.get("playlists") or {}).get("items", [])
+                for p in playlists:
+                    try_add_playlist_basic(p)
             except Exception:
-                rec = None
+                continue
 
-        if not rec:
-            seed_genres = ["pop", "j-pop", "dance", "rock", "anime"]
-            rec = spotipy.Spotify(auth=_ensure_token()["access_token"]).recommendations(
-                seed_genres=seed_genres[:5], limit=limit, market=market
-            )
-
-        return jsonify({"tracks": rec.get("tracks", [])})
+        return jsonify({"entries": out[:20], "market": market})
     except Exception as e:
-        return jsonify({"error": "failed_to_fetch_recommendations", "details": str(e)}), 500
+        # Fail safe: return empty suggestions
+        return jsonify({"entries": [], "market": None, "error": "failed_to_list_sources", "details": str(e)})
+
+# -------- API: delete single recent recommendation entry --------
+@app.route(f"{API_PREFIX}/recommendations/recent/<int:index>", methods=["DELETE"])
+def recommendations_recent_delete_index(index: int):
+    lst = session.get("recent_recs") or []
+    if index < 0 or index >= len(lst):
+        return jsonify({"ok": False, "error": "index_out_of_range", "size": len(lst)}), 400
+    removed = lst.pop(index)
+    session["recent_recs"] = lst
+    return jsonify({"ok": True, "removed_ts": removed.get("ts"), "size": len(lst)})
+
+@app.route(f"{API_PREFIX}/recommendations/recent/by-ts/<int:ts>", methods=["DELETE"])
+def recommendations_recent_delete_ts(ts: int):
+    lst = session.get("recent_recs") or []
+    new_lst = [e for e in lst if int(e.get("ts") or 0) != int(ts)]
+    removed_count = len(lst) - len(new_lst)
+    session["recent_recs"] = new_lst
+    return jsonify({"ok": True, "removed": removed_count, "size": len(new_lst)})
 
 # -------- Debug --------
 @app.route(f"{API_PREFIX}/debug/me")
