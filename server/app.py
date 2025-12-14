@@ -1,4 +1,4 @@
-# server/app.py
+# server/app.pyこれです
 import os
 import time
 import random
