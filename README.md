@@ -1,3 +1,4 @@
+**このリポジトリはkaraoke_hackthon（https://github.com/omomi-moti/karaoke_hackthon?tab=readme-ov-file）からフォークされたものです。
 # 🎤 KaraPoke (カラポケ)
 **〜Spotify履歴から「歌いたい」を可視化する。カラオケ体験向上アプリ〜**
 
